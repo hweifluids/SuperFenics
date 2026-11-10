@@ -1,0 +1,16 @@
+[submodule "dolfinx"]
+	path = dolfinx
+	url = https://github.com/hweifluids/dolfinx.git
+	branch = main
+[submodule "basix"]
+	path = basix
+	url = https://github.com/hweifluids/basix.git
+	branch = main
+[submodule "ufl"]
+	path = ufl
+	url = https://github.com/hweifluids/ufl.git
+	branch = main
+[submodule "ffcx"]
+	path = ffcx
+	url = https://github.com/hweifluids/ffcx.git
+	branch = main
