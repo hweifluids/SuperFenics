@@ -1,38 +1,24 @@
-# 官方算例
+# SuperFenics 示例
 
-本目录集中保存当前四个 FEniCSx 子模块所含的官方 demo，共 124 个算例入口。测试驱动、配置和构建辅助文件一并保留，共 158 个上游 demo 文件。这里的“全部”指这四个组件中已检出的官方 demo，不包含第三方教程或单元测试集。
+| 示例 | 内容 |
+| --- | --- |
+| [CPU 三维算子装配](cpu-assembly/benchmark_cpu.py) | 在两组六面体网格和一组四面体网格上测量标量对流扩散算子的装配与作用，核对不同计算路径的结果。 |
+| [GPU 四面体单元核](gpu-cell-kernel/probe.cu) | 用 [FFCx 生成单元核](gpu-cell-kernel/generate_gpu_probe.py)，在 CPU 和单张 CUDA GPU 上运行同一核，对 65,536 个独立单元做结果对照和计时。 |
 
-| 目录 | 官方算例入口数 | 内容 |
-| --- | ---: | --- |
-| dolfinx/python/demo/ | 32 | Python 求解、网格、通信、输出等算例 |
-| dolfinx/cpp/demo/ | 9 | C++ 求解、装配、插值等算例 |
-| basix/demo/python/ | 7 | Python 有限元定义、制表、求积与变换 |
-| basix/demo/cpp/ | 2 | C++ 有限元制表与 DOF 变换 |
-| ufl/demo/ | 42 | 弱式与符号表达示例，通常不独立求解 PDE |
-| ffcx/demo/ | 32 | 31 个形式编译输入及一个 C 驱动算例 |
+两者都是针对局部计算路径的微基准。官方完整求解示例及各组件的功能示例随子模块保留在原来的 demo 目录。
 
-来源、固定提交和逐文件校验记录见 [upstream.json](upstream.json)。各组件的许可证位于对应组件目录。算例源码保持上游内容，未为本次目录整理改动数值方法。
+## 本机运行
 
-## 本地集中布局
+使用已安装仓库对应版本的 FEniCSx 的 Python。CPU 示例还使用 mpi4py、SciPy 和用于 JIT 的 C 编译器。GPU 示例需要 CUDA Toolkit 与 Visual Studio 的 x64 C++ 编译环境，请在 x64 Developer PowerShell 中运行。GPU 入口沿用 RTX 2080 Ti 的 sm_75 架构和原有编译选项。
 
-运行仓库自带的 PowerShell 脚本可整理已经初始化的四个子模块。
+从仓库根目录运行以下命令，将 Python 路径换成实际环境。启动 GPU 示例前用 nvidia-smi 核对设备和占用，按当前 CUDA 可见设备列表传入编号。
 
 ~~~powershell
-pwsh -File examples/organize.ps1
+$python = 'F:/SuperFenics/.superfenics-build/venv/Scripts/python.exe'
+& $python -B ./examples/run.py cpu-assembly
+
+nvidia-smi
+& $python -B ./examples/run.py gpu-cell-kernel --gpu 1
 ~~~
 
-脚本把 demo 实体目录移动到本目录，并在子模块原位置建立兼容目录联接。Windows 使用 junction，因此不要求启用符号链接权限。原有构建、文档和模块测试仍可访问原 demo 路径，同一台机器上两个入口指向同一份算例文件。
-
-Basix 的 CMake demo 使用相对路径查找辅助模块，FFCx 的 demo 测试驱动使用相对路径查找 UFCx 头文件。examples/basix/cmake 和 examples/ffcx/ffcx 是本地辅助联接，已加入根目录的 Git 忽略规则，不额外跟踪库源码。
-
-新递归克隆同时包含主仓库的算例快照和子模块的原 demo。再次运行整理脚本时，只有两处文件完全一致才会整理；子模块中的重复实体先移入不跟踪的 .tests/workspace-layout/backups/，然后建立联接。两份内容不同时保留现场并要求检查。上游更新后，不要盲目覆盖其中一份。
-
-在集中布局下，修改算例会同时反映在主仓库 examples/ 和相应子模块的工作树中。若未来需要提交修改，应检查两边的 diff，并同步更新主仓库记录的子模块提交和来源清单。
-
-## 运行位置
-
-项目测试运行目录、构建目录、缓存、数据和报告放在根目录 .tests/。本次仅核验迁移与路径完整性，没有重新运行这些算例。
-
-官方测试驱动中有一些会把生成代码或构建文件写在源码旁边。未来运行时，应将所需输入及依赖布局准备到 .tests/，或将输出与构建目录显式定向到 .tests/，避免污染本目录。
-
-UFL demo 依赖 ufl/test/utils.py 提供的示例有限元工具。单独运行或检查这些形式时，将仓库的 ufl/test 目录加入 PYTHONPATH。C++ 算例需要已安装的相应库及原有可选依赖，移动目录不改变依赖要求。
+运行入口按脚本位置定位源码。它将 Windows 处理器组 0 的指定逻辑 CPU 应用于整个进程树，默认用 CPU 0，也可以通过 --cpu 选择组内其他逻辑 CPU。CPU 示例使用单 MPI rank，并把 OpenMP 和 BLAS 的线程数设为 1。每次运行的控制台日志、JIT 缓存、CUDA 生成代码和可执行文件以及 JSON 结果写入 .tests/examples/ 下对应示例的独立运行目录。终端会显示运行目录。

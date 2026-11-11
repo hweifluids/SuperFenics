@@ -5,7 +5,3 @@ codexlog/
 /.plans/
 /.tests/
 /.reports/
-
-# Local compatibility links for relocated official examples.
-/examples/basix/cmake/
-/examples/ffcx/ffcx/
