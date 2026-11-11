@@ -1,1 +1,11 @@
 codexlog/
+
+# Local workspace instructions, plans, tests and reports.
+/AGENTS.md
+/.plans/
+/.tests/
+/.reports/
+
+# Local compatibility links for relocated official examples.
+/examples/basix/cmake/
+/examples/ffcx/ffcx/
