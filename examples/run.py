@@ -88,14 +88,18 @@ def run(command, out, env, log):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("example", choices=("cpu-assembly", "gpu-cell-kernel"))
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument("example", choices=("cpu-assembly", "gpu-cell-kernel", "taylor-green-dns"))
     parser.add_argument("--cpu", type=int, default=0, help="Logical CPU in group 0 (0–63)")
-    parser.add_argument("--gpu", type=int, help="CUDA device index for gpu-cell-kernel")
-    args = parser.parse_args()
+    parser.add_argument("--gpu", type=int, help="CUDA device index for GPU examples")
+    args, options = parser.parse_known_args()
+    if options and args.example != "taylor-green-dns":
+        parser.error(f"Unrecognized arguments: {' '.join(options)}")
+    if any(option == "--out" or option.startswith("--out=") for option in options):
+        parser.error("The launcher selects the output directory.")
     if sys.platform != "win32" or not 0 <= args.cpu <= 63:
         parser.error("Choose a logical CPU between 0 and 63 on Windows.")
-    if args.example == "gpu-cell-kernel" and (args.gpu is None or args.gpu < 0):
+    if args.example != "cpu-assembly" and (args.gpu is None or args.gpu < 0):
         parser.error("Provide the CUDA device index using --gpu.")
 
     affinity = bind_cpu(args.cpu)
@@ -119,6 +123,13 @@ def main():
         print(affinity, file=log, flush=True)
         if args.example == "cpu-assembly":
             run([*python, source / "benchmark_cpu.py", "--out", out], out, env, log)
+        elif args.example == "taylor-green-dns":
+            env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+            env["CUPY_CACHE_DIR"] = str(out / "cuda-cache")
+            run(
+                [*python, source / "taylor_green.py", "--out", out, "--gpu", str(args.gpu), *options],
+                out, env, log,
+            )
         else:
             env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
             run([*python, source / "generate_gpu_probe.py", "--out", out], out, env, log)

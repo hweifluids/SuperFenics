@@ -8,7 +8,7 @@ A FEniCSx development workspace. The parent repository pins four GitHub forks as
 | basix/ | Finite element definitions and basis functions |
 | ufl/ | Symbolic representation of variational forms |
 | ffcx/ | Form compiler and UFCx interface |
-| examples/ | SuperFenics CPU assembly and GPU cell-kernel examples |
+| examples/ | SuperFenics microbenchmarks and 3D Taylor–Green DNS example |
 | .tests/ | Local tests, builds, caches, runtime data, and reports, excluded from Git |
 | .plans/, .reports/ | Reserved local directories, excluded from Git |
 
@@ -35,7 +35,7 @@ Check the working trees before modifying or updating a submodule. The parent rep
 
 Official demos are included in each submodule. DOLFINx Python and C++ examples are in dolfinx/python/demo/ and dolfinx/cpp/demo/. Basix, UFL, and FFCx examples are in basix/demo/, ufl/demo/, and ffcx/demo/.
 
-The root examples/ directory provides two SuperFenics microbenchmarks covering 3D CPU operator assembly and a GPU tetrahedral cell kernel. Their scope and execution instructions are documented in the [examples README](examples/README.md).
+The root examples/ directory provides microbenchmarks for 3D CPU operator assembly and a GPU tetrahedral cell kernel, along with a complete single-GPU 3D Taylor–Green vortex DNS benchmark. See the [examples README](examples/README.md) for execution instructions.
 
 ## Local workspace files
 
