@@ -50,7 +50,7 @@ Build the Python package from the pinned DOLFINx fork. The framework example def
 
 Use --backend cpu for native DOLFINx assembly and a CPU pressure projection. The launcher stores timing, diagnostics and final fields under .tests/examples/taylor-green-framework/.
 
-On CUDA device 1, the framework baseline completed all 500 steps on 48^3 cells at 3.576 full steps/s after warmup. The time loop took 143.90 s with diagnostics. The final velocity and pressure agreed with the earlier FFCx GPU run within 3.44e-15 in relative L2 norm.
+On CUDA device 1, the framework baseline completed all 500 steps on 48^3 cells at 3.684 full steps/s after warmup. The time loop took 139.44 s with diagnostics. The final velocity and pressure agreed with the earlier FFCx GPU run within 3.32e-15 in relative L2 norm.
 
 ## Workstation measurements
 
