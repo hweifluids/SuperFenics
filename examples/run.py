@@ -89,18 +89,23 @@ def run(command, out, env, log):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("example", choices=("cpu-assembly", "gpu-cell-kernel", "taylor-green-dns"))
+    parser.add_argument(
+        "example",
+        choices=("cpu-assembly", "gpu-cell-kernel", "taylor-green-dns", "taylor-green-framework"),
+    )
     parser.add_argument("--cpu", type=int, default=0, help="Logical CPU in group 0 (0–63)")
     parser.add_argument("--gpu", type=int, help="CUDA device index for GPU examples")
     args, options = parser.parse_known_args()
-    if options and args.example != "taylor-green-dns":
+    if options and args.example not in ("taylor-green-dns", "taylor-green-framework"):
         parser.error(f"Unrecognized arguments: {' '.join(options)}")
     if any(option == "--out" or option.startswith("--out=") for option in options):
         parser.error("The launcher selects the output directory.")
     if sys.platform != "win32" or not 0 <= args.cpu <= 63:
         parser.error("Choose a logical CPU between 0 and 63 on Windows.")
-    if args.example != "cpu-assembly" and (args.gpu is None or args.gpu < 0):
+    if args.example in ("gpu-cell-kernel", "taylor-green-dns") and args.gpu is None:
         parser.error("Provide the CUDA device index using --gpu.")
+    if args.gpu is not None and args.gpu < 0:
+        parser.error("Choose a nonnegative CUDA device index.")
 
     affinity = bind_cpu(args.cpu)
     examples = Path(__file__).resolve().parent
@@ -128,6 +133,15 @@ def main():
             env["CUPY_CACHE_DIR"] = str(out / "cuda-cache")
             run(
                 [*python, source / "taylor_green.py", "--out", out, "--gpu", str(args.gpu), *options],
+                out, env, log,
+            )
+        elif args.example == "taylor-green-framework":
+            env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+            env["CUPY_CACHE_DIR"] = str(out / "cuda-cache")
+            gpu = [] if args.gpu is None else ["--gpu", str(args.gpu)]
+            run(
+                [*python, examples / "taylor-green-dns" / "framework_baseline.py",
+                 "--out", out, *gpu, *options],
                 out, env, log,
             )
         else:

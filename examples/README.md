@@ -5,6 +5,7 @@
 | [3D CPU operator assembly](cpu-assembly/benchmark_cpu.py) | Measures assembly and application of a scalar convection-diffusion operator on two hexahedral meshes and one tetrahedral mesh, and checks equivalence between computation paths. |
 | [GPU tetrahedral cell kernel](gpu-cell-kernel/probe.cu) | Generates a cell kernel with FFCx, executes the same kernel on the CPU and one CUDA GPU, and compares results and timings for 65,536 independent cells. The [generator](gpu-cell-kernel/generate_gpu_probe.py) writes the generated sources into the run directory. |
 | [3D Taylor–Green DNS](taylor-green-dns/README.md) | Advances an incompressible flow in a periodic cube on one CUDA GPU, including momentum assembly and pressure projection at every RK4 stage. |
+| [Framework Taylor–Green baseline](taylor-green-dns/framework_baseline.py) | Runs the same flow through the periodic solver and FFCx CUDA assembly in the DOLFINx fork. |
 
 Official PDE solver demos and component feature demos are stored in their original submodule demo directories.
 

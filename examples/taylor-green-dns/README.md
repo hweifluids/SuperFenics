@@ -40,6 +40,18 @@ The launcher writes the console log, generated kernel, caches, results.json, and
 
 The step timer includes the four RK4 stages, all pressure projections, and device synchronization. It excludes mesh setup, JIT, the first five warmup steps, diagnostics, and field output. The JSON result records all timed step durations and the wall time of the complete time loop. The CSV records kinetic energy, spanwise kinetic energy, viscous dissipation, the pressure-space divergence residual, the advective CFL estimate, and the inferred Kolmogorov length. The divergence residual measures the discrete weak constraint.
 
+## Framework baseline
+
+Build the Python package from the pinned DOLFINx fork. The framework example defines the same mesh, UFL momentum form and initial condition. DOLFINx provides periodic DOF identification, FFCx CUDA vector assembly, the pressure projection and the time integrator. This route uses the generated FP64 kernels and supports the same case parameters as the DNS example. SciPy is required for static operator assembly. The CUDA backend also requires CuPy.
+
+~~~powershell
+& $python -B ./examples/run.py taylor-green-framework --backend cuda --gpu 1
+~~~
+
+Use --backend cpu for native DOLFINx assembly and a CPU pressure projection. The launcher stores timing, diagnostics and final fields under .tests/examples/taylor-green-framework/.
+
+On CUDA device 1, the framework baseline completed all 500 steps on 48^3 cells at 3.576 full steps/s after warmup. The time loop took 143.90 s with diagnostics. The final velocity and pressure agreed with the earlier FFCx GPU run within 3.44e-15 in relative L2 norm.
+
 ## Workstation measurements
 
 The default mesh has 110,592 cells, 2,654,208 velocity degrees of freedom, and 110,592 pressure coefficients with a zero-mean constraint. On one RTX 2080 Ti with 22 GiB of memory, the original FFCx GPU backend measured 3.71 full steps/s after warmup. The tensor backend with FP64 fused multiply-add measured 23.22 steps/s. The previous tensor version measured 16.16 steps/s, giving a 43.64% throughput improvement. The complete 500-step loop, including warmup and diagnostics, took 22.36 s with fused multiply-add and 32.04 s in the previous tensor version. Final velocity and pressure differed from that version by at most 3.00e-15 in relative L2 norm. Two local dual-GPU runs measured 32.72 and 34.47 steps/s, exceeding the previous 26.16 steps/s by 25.08% and 31.75%. These dual runs used pinned-host exchanges and the same complete 500-step case.
