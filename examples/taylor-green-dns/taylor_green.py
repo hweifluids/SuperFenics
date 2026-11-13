@@ -20,6 +20,8 @@ from dolfinx import fem, la, mesh
 from mpi4py import MPI
 from scipy.sparse import csr_matrix
 
+from tensor_backend import TensorMomentum, tensor_data
+
 
 LENGTH = 2 * math.pi
 VOLUME = LENGTH**3
@@ -95,7 +97,8 @@ def compile_momentum(form, out):
 class TaylorGreen:
     """Periodic Q2/Q1 spatial discretization and projected RK4 time integration."""
 
-    def __init__(self, cells, reynolds, out):
+    def __init__(self, cells, reynolds, out, backend="ffcx"):
+        self.backend = backend
         self.cells = cells
         self.viscosity = 1.0 / reynolds
         self.pressure_shape = (cells,) * 3
@@ -170,18 +173,29 @@ class TaylorGreen:
             or self.momentum.ufcx_form.num_constants != 1
         ):
             raise ValueError("Unexpected layout for the generated momentum kernel.")
-        self.cell_dofs = cp.asarray(self.velocity_ids[cell_dofs], dtype=cp.int32)
+        tensor = None
+        if backend == "tensor":
+            tensor = tensor_data(scalar_space.element.basix_element, geometry, LENGTH / cells)
+            cell_dofs = cell_dofs[:, tensor[0]]
+        self.cell_dofs = cp.asarray(np.ascontiguousarray(self.velocity_ids[cell_dofs], dtype=np.int32))
         self.geometry = cp.asarray(geometry)
-        self.assemble = compile_momentum(self.momentum, out)
+        self.assemble = (
+            TensorMomentum(tensor, LENGTH / cells) if tensor is not None
+            else compile_momentum(self.momentum, out)
+        )
 
     def residual(self, velocity):
         result = cp.zeros_like(velocity)
-        threads = 128
-        self.assemble(
-            ((self.cells**3 + threads - 1) // threads,), (threads,),
-            (np.int32(self.cells**3), self.cell_dofs, self.geometry, velocity,
-             np.float64(self.viscosity), result),
-        )
+        cells = self.cells**3
+        if self.backend == "tensor":
+            self.assemble(cells, self.cell_dofs, self.geometry, velocity, self.viscosity, result)
+        else:
+            threads = 128
+            self.assemble(
+                ((cells + threads - 1) // threads,), (threads,),
+                (np.int32(cells), self.cell_dofs, self.geometry, velocity,
+                 np.float64(self.viscosity), result),
+            )
         return result
 
     def pressure_correction(self, velocity):
@@ -264,6 +278,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--gpu", type=int, required=True)
+    parser.add_argument(
+        "--backend", choices=("tensor", "ffcx"), default="tensor",
+        help="GPU momentum assembly backend (default: tensor)",
+    )
     parser.add_argument("--cells", type=int, default=48, help="Hexahedral cells per axis")
     parser.add_argument("--reynolds", type=float, default=200)
     parser.add_argument("--dt", type=float, default=0.02)
@@ -297,7 +315,7 @@ def main():
         )
         start = time.perf_counter()
         available_start, _ = device.mem_info
-        flow = TaylorGreen(args.cells, args.reynolds, args.out)
+        flow = TaylorGreen(args.cells, args.reynolds, args.out, args.backend)
         assembly_error = flow.check_assembly() if args.check_assembly else None
         velocity = flow.initial_velocity()
         first = flow.diagnostics(velocity, 0, args.dt)
@@ -337,7 +355,7 @@ def main():
             "case": "3D incompressible Taylor-Green vortex",
             "discretization": "periodic hexahedral Q2/Q1 with lumped velocity mass",
             "time_integrator": "classical RK4, discrete pressure projection per stage",
-            "precision": "float64",
+            "precision": "float64", "momentum_backend": args.backend,
             "device": properties["name"].decode(),
             "device_index": args.gpu,
             "pci_bus_id": device.pci_bus_id,
