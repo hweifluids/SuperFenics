@@ -52,6 +52,16 @@ Use --backend cpu for native DOLFINx assembly and a CPU pressure projection. The
 
 On CUDA device 1, the framework baseline completed all 500 steps on 48^3 cells at 3.684 full steps/s after warmup. The time loop took 139.44 s with diagnostics. The final velocity and pressure agreed with the earlier FFCx GPU run within 3.32e-15 in relative L2 norm.
 
+For two CUDA devices, pass a second device index. The library partitions
+the cell integrals and sparse operators into two x-slabs. The first
+device performs the global FFT pressure solve, and each device keeps its
+own RK4 velocity state. The two-device backend uses CUDA peer copies
+when available in both directions and pinned host buffers otherwise.
+
+~~~powershell
+& $python -B ./examples/run.py taylor-green-framework --backend cuda --gpu 1 --secondary-gpu 0
+~~~
+
 ## Workstation measurements
 
 The default mesh has 110,592 cells, 2,654,208 velocity degrees of freedom, and 110,592 pressure coefficients with a zero-mean constraint. On one RTX 2080 Ti with 22 GiB of memory, the original FFCx GPU backend measured 3.71 full steps/s after warmup. The tensor backend with FP64 fused multiply-add measured 23.22 steps/s. The previous tensor version measured 16.16 steps/s, giving a 43.64% throughput improvement. The complete 500-step loop, including warmup and diagnostics, took 22.36 s with fused multiply-add and 32.04 s in the previous tensor version. Final velocity and pressure differed from that version by at most 3.00e-15 in relative L2 norm. Two local dual-GPU runs measured 32.72 and 34.47 steps/s, exceeding the previous 26.16 steps/s by 25.08% and 31.75%. These dual runs used pinned-host exchanges and the same complete 500-step case.

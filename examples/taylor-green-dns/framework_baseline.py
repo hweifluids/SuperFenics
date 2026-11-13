@@ -6,6 +6,7 @@ import json
 import math
 import statistics
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from mpi4py import MPI
@@ -31,15 +32,25 @@ def initial_velocity(x):
 
 def diagnostics(flow, velocity, step, dt, cells, viscosity, xp):
     """Measure the periodic discrete flow invariants and resolution scales."""
-    weighted_square = flow.mass * velocity**2
-    dissipation = float(xp.dot(velocity, flow.residual(velocity))) / VOLUME
-    divergence = (flow.divergence @ velocity) * (cells**3 / VOLUME)
-    maximum = float(xp.max(xp.sum(xp.abs(velocity.reshape(-1, 3)), axis=1)))
+    parts = velocity if isinstance(velocity, tuple) else (velocity,)
+    masses = flow.mass if isinstance(flow.mass, tuple) else (flow.mass,)
+    residual = flow.residual(velocity)
+    loads = residual if isinstance(residual, tuple) else (residual,)
+    energy = spanwise_energy = dissipation = maximum = 0.0
+    for mass, values, load in zip(masses, parts, loads, strict=True):
+        with values.device if xp is not np else nullcontext():
+            weighted_square = mass * values**2
+            energy += float(xp.sum(weighted_square))
+            spanwise_energy += float(xp.sum(weighted_square[2::3]))
+            dissipation += float(xp.dot(values, load))
+            maximum = max(maximum, float(xp.max(xp.sum(xp.abs(values.reshape(-1, 3)), axis=1))))
+    dissipation /= VOLUME
+    divergence = flow.weak_divergence(velocity) * (cells**3 / VOLUME)
     result = {
         "step": step,
         "time": step * dt,
-        "kinetic_energy": float(xp.sum(weighted_square)) / (2 * VOLUME),
-        "spanwise_kinetic_energy": float(xp.sum(weighted_square[2::3])) / (2 * VOLUME),
+        "kinetic_energy": energy / (2 * VOLUME),
+        "spanwise_kinetic_energy": spanwise_energy / (2 * VOLUME),
         "viscous_dissipation": dissipation,
         "weak_divergence_rms": float(xp.sqrt(xp.mean(divergence**2))),
         "advective_cfl": maximum * dt * (2 * cells) / LENGTH,
@@ -56,14 +67,12 @@ def diagnostics(flow, velocity, step, dt, cells, viscosity, xp):
     return result
 
 
-def verify_assembly(flow, form, state, xp):
+def verify_assembly(flow, form, state):
     """Compare a periodic residual against DOLFINx CPU assembly."""
     probe = np.random.default_rng(29).standard_normal(flow.velocity_dofs.size)
     state.x.array[:] = flow.velocity_dofs.expand(probe)
     expected = flow.velocity_dofs.accumulate(fem.assemble_vector(form).array)
-    actual = flow.residual(xp.asarray(probe))
-    if xp is not np:
-        actual = actual.get()
+    actual = flow.gather(flow.residual(flow.distribute(probe)))
     scale = np.max(np.abs(expected))
     np.testing.assert_allclose(actual, expected, rtol=1e-11, atol=1e-12 * scale)
     return float(np.max(np.abs(actual - expected)) / scale)
@@ -111,12 +120,13 @@ def main(args, xp, device):
         lower=lower,
         upper=upper,
         backend=args.backend,
+        cuda_devices=args.cuda_devices,
         jit_options=jit,
     )
 
-    assembly_error = verify_assembly(flow, load, state, xp) if args.backend == "cuda" else None
+    assembly_error = verify_assembly(flow, load, state) if args.backend == "cuda" else None
     state.interpolate(initial_velocity)
-    velocity = flow.project(xp.asarray(flow.velocity_dofs.restrict(state.x.array)))
+    velocity = flow.project(flow.distribute(flow.velocity_dofs.restrict(state.x.array)))
     first = diagnostics(flow, velocity, 0, args.dt, n, viscosity, xp)
     np.testing.assert_allclose(first["kinetic_energy"], 0.125, rtol=0, atol=1e-9)
     setup_seconds = time.perf_counter() - setup_start
@@ -127,8 +137,7 @@ def main(args, xp, device):
     for step in range(1, args.steps + 1):
         start = time.perf_counter()
         velocity = flow.step(velocity, args.dt)
-        if device is not None:
-            device.synchronize()
+        flow.synchronize()
         elapsed = time.perf_counter() - start
         if step > args.warmup:
             timings.append(elapsed)
@@ -143,8 +152,9 @@ def main(args, xp, device):
             )
     loop_seconds = time.perf_counter() - loop_start
     pressure = flow.pressure(velocity)
+    velocity = flow.gather(velocity)
     if device is not None:
-        velocity, pressure = velocity.get(), pressure.get()
+        pressure = pressure.get()
     if not np.isfinite(velocity).all() or not np.isfinite(pressure).all():
         raise RuntimeError("The final fields contain non-finite values.")
     np.testing.assert_allclose(pressure.mean(), 0, rtol=0, atol=1e-12)
@@ -197,6 +207,9 @@ def main(args, xp, device):
         results.update(
             cupy=xp.__version__, cuda_runtime_version=xp.cuda.runtime.runtimeGetVersion()
         )
+    if args.cuda_devices is not None:
+        results["cuda_devices"] = list(args.cuda_devices)
+        results["communication"] = flow.communication_profile()
     (args.out / "results.json").write_text(
         json.dumps(results, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
@@ -212,6 +225,7 @@ if __name__ == "__main__":
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--backend", choices=("cpu", "cuda"), default="cuda")
     parser.add_argument("--gpu", type=int, default=1)
+    parser.add_argument("--secondary-gpu", type=int, help="Second CUDA device index")
     parser.add_argument("--cells", type=int, default=48)
     parser.add_argument("--steps", type=int, default=500)
     parser.add_argument("--reynolds", type=float, default=200)
@@ -219,6 +233,11 @@ if __name__ == "__main__":
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--diagnostics-every", type=int, default=10)
     args = parser.parse_args()
+    args.cuda_devices = None
+    if args.secondary_gpu is not None:
+        if args.backend != "cuda" or args.secondary_gpu < 0 or args.secondary_gpu == args.gpu:
+            parser.error("Select a second, distinct CUDA device for the CUDA backend.")
+        args.cuda_devices = (args.gpu, args.secondary_gpu)
     if MPI.COMM_WORLD.size != 1 or args.cells < 4:
         parser.error("Use one MPI rank and at least four cells per direction.")
     if not 0 <= args.warmup < args.steps or args.diagnostics_every < 1:
