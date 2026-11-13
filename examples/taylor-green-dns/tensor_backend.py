@@ -81,7 +81,7 @@ class TensorMomentum:
         source = constants + Path(__file__).with_name("tensor_momentum.cu").read_text(
             encoding="utf-8"
         )
-        self.kernel = cp.RawModule(code=source, options=("--std=c++17", "--fmad=false")).get_function(
+        self.kernel = cp.RawModule(code=source, options=("--std=c++17", "--fmad=true")).get_function(
             "assemble_momentum"
         )
 
